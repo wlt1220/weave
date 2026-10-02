@@ -1,0 +1,1 @@
+Weave is open source, under the M I T license. The prototype runs today: the intent engine, the causal cone merger, the Workers coordination plane, and the git bridge. The same ambition as the twenty forty-six visions — but running now, not in twenty years. Version control for the agent century. The link is in the description.

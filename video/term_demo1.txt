@@ -1,0 +1,29 @@
+================================================================
+WEAVE DEMO — causal-cone merge vs negotiation
+================================================================
+
+--- Scenario 1: two agents, disjoint cones → auto-merge ---
+cone(charge) ∩ cone(refund): no dependency either way
+→ disjoint cones — merged lock-free (0.6ms)
+✓ merged file compiles; trunk holds both intents
+
+--- Scenario 2: same node, one verified → negotiation ---
+→ overlap: same node 'charge' in payments.py
+  [system] negotiation opened: same node 'charge' in payments.py
+  [agent-1] 200k req/day hit double-charge on retries; key makes it safe
+  [agent-3] fee was flat 2%; cross-border needs 2.9% + 30c
+  [arbiter] exactly one verified intent: agent-1 wins; agent-3's change parked as ghost gene for follow-up
+  outcome=merged winner=1863b15c0bf4 ghost_genes=1
+
+--- Scenario 3: dependency overlap, both verified → escalate ---
+→ overlap: 'refund' depends on 'log' in payments.py
+  [system] negotiation opened: 'refund' depends on 'log' in payments.py
+  [agent-4] new log pipeline requires uppercase normalized lines
+  [agent-2] finance requires an audit trail on every refund
+  [arbiter] both intents verified=True: no safe automatic resolution — escalating to human with full context
+  outcome=escalated
+  human_context: contested: 'normalize log format' vs 'add audit trail to refund'; overlap: 'refund' depends on 'log' in payments.py
+
+================================================================
+done: 1 lock-free merge, 1 negotiated merge, 1 human escalation
+================================================================

@@ -1,0 +1,13 @@
+stream 'videocap' → repo weave-stream-videocap (artifacts=off, local DO store)
+
+--- agent-1 → charge (verified) ---
+  integrated=True id=ed5fd9c3970f
+--- agent-2 → refund (verified, disjoint) ---
+  integrated=True id=1f274dbc7e41
+--- agent-3 → charge (UNVERIFIED, same node) ---
+  integrated=False awaiting_verification=True
+--- agent-3's CI finishes → receipt arrives ---
+  verified, integrated=False negotiation=ng-muqsvaxx2278 reason=same node 'charge' in payments.py
+
+stream state: trunk_folds=2 pending=1 negotiations=1 log=3
+  [ng-muqsvaxx2278] escalated winner=None :: same node 'charge' in payments.py

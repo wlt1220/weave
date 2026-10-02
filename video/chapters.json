@@ -1,0 +1,38 @@
+[
+ {
+  "scene": "title",
+  "dur": 9.88
+ },
+ {
+  "scene": "problem",
+  "dur": 29.92
+ },
+ {
+  "scene": "reframe",
+  "dur": 41.37
+ },
+ {
+  "scene": "term_demo1",
+  "dur": 73.43
+ },
+ {
+  "scene": "arch",
+  "dur": 34.53
+ },
+ {
+  "scene": "term_demo2",
+  "dur": 34.96
+ },
+ {
+  "scene": "concurrency",
+  "dur": 49.43
+ },
+ {
+  "scene": "term_why",
+  "dur": 17.27
+ },
+ {
+  "scene": "closing",
+  "dur": 21.76
+ }
+]

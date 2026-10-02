@@ -1,0 +1,8 @@
+intent 99c66ffd20de — add idempotency key to charge
+  author: agent-1 (claude-opus)
+  rationale: 200k req/day hit double-charge on retries; key makes it safe
+  verified: True
+intent 8137c4cfec9c — add audit trail to refund
+  author: agent-2 (claude-opus)
+  rationale: finance requires an audit trail on every refund
+  verified: True

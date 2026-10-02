@@ -3,3 +3,11 @@ node_modules/
 __pycache__/
 *.pyc
 .weave/
+video/frames/
+video/narration/*.mp3
+video/narration/*.wav
+video/*.wav
+video/*.mp4
+video/spot/
+workers/.wrangler/
+workers/node_modules/

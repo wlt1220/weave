@@ -1,0 +1,1 @@
+And every decision leaves a trail. weave why shows you exactly why a change won — who wrote it, what they were thinking, and whether it was verified. Not a commit message. A proof. That's how humans stay in the loop when a hundred thousand agents are writing the code.

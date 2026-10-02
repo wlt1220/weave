@@ -1,0 +1,1 @@
+Version control was built for humans. But the next thirty years belong to agents. This is Weave — version control for the agent century.

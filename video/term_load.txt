@@ -1,0 +1,11 @@
+firing 100 intents from 20 concurrent agents…
+
+100 intents in 3.0s → 33 intents/s
+folded lock-free : 73
+negotiations     : 0
+errors           : 0
+trunk folds      : 73
+pending          : 27
+negotiation outcomes: {}
+late verifications : 27
+after rebase-retry : +13 folded, 0 still pending, trunk folds=100
