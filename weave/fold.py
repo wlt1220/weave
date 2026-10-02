@@ -37,6 +37,7 @@ class Fold:
     base_sources: dict[str, str] = field(default_factory=dict)
     cells: dict[str, Cell] = field(default_factory=dict)  # keyed by node_id
     log_pos: int = 0                                       # intents folded
+    reverted: set[str] = field(default_factory=set)        # excised intent ids
 
     # ---- construction ----
 
@@ -66,9 +67,13 @@ class Fold:
         """Fold `intents` (next in log order) incrementally.
 
         Returns the dirty cell ids — the only cells recomputed.
+        Reverted intents are skipped (rewind is append-only).
         """
         dirty: list[str] = []
         for it in intents:
+            self.log_pos += 1
+            if not it.id or it.id in self.reverted:
+                continue
             for op in it.operations:
                 file, node = op.get("file"), op.get("node")
                 if not file or not node or "new_source" not in op:
@@ -94,7 +99,6 @@ class Fold:
                     or cell.span
                 if key not in dirty:
                     dirty.append(key)
-            self.log_pos += 1
         return dirty
 
     # ---- materialization ----
@@ -123,6 +127,7 @@ class Fold:
     def to_dict(self) -> dict:
         return {
             "log_pos": self.log_pos,
+            "reverted": sorted(self.reverted),
             "base_sources": self.base_sources,
             "cells": {k: c.to_dict() for k, c in self.cells.items()},
         }
@@ -133,4 +138,5 @@ class Fold:
             base_sources=d.get("base_sources", {}),
             cells={k: Cell.from_dict(v) for k, v in d.get("cells", {}).items()},
             log_pos=d.get("log_pos", 0),
+            reverted=set(d.get("reverted", [])),
         )

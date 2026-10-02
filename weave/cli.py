@@ -49,8 +49,10 @@ def cmd_commit_intent(args):
 
 def cmd_log(args):
     store = Store.open(find_root())
+    reverted = store.reverted_ids()
     for e in store.log(args.stream):
-        flag = "✓" if store.get(e["id"]).verified else "○"
+        it = store.get(e["id"])
+        flag = "✗" if e["id"] in reverted else ("✓" if it.verified else "○")
         print(f"{flag} {e['id'][:12]} [{e['stream']}] {e['goal']}")
 
 
@@ -73,27 +75,38 @@ def _print_cell(cell):
             print(f"      rationale: {it.rationale or '(none recorded)'}")
 
 
+def _ensure_fold(store):
+    """Load the fold, building from working-tree genesis if absent.
+
+    Returns (fold, is_new). The intent log is the source of truth; the
+    working tree at first fold is genesis.
+    """
+    from .fold import Fold
+    fold = store.load_fold()
+    if fold is not None:
+        return fold, False
+    entries = store.log()
+    intents = [store.get(e["id"]) for e in entries]
+    files = sorted({op.get("file") for it in intents
+                    for op in it.operations if op.get("file")})
+    if not files:
+        raise SystemExit("nothing to fold (no intents with file operations)")
+    base = {}
+    for f in files:
+        if not os.path.isfile(f):
+            raise SystemExit(f"genesis file missing in working tree: {f}")
+        with open(f) as fh:
+            base[f] = fh.read()
+    return Fold.build(base, intents), True
+
+
 def cmd_fold(args):
     """Materialize the intent log to the working tree, per-cell incremental."""
-    from .fold import Fold
     store = Store.open(find_root())
     entries = store.log()
     intents = [store.get(e["id"]) for e in entries]
-    fold = store.load_fold()
-    if fold is None:
-        files = sorted({op.get("file") for it in intents
-                        for op in it.operations if op.get("file")})
-        if not files:
-            print("nothing to fold (no intents with file operations)")
-            return
-        base = {}
-        for f in files:
-            if not os.path.isfile(f):
-                print(f"genesis file missing in working tree: {f}")
-                return
-            with open(f) as fh:
-                base[f] = fh.read()
-        fold = Fold.build(base, intents)
+    fold, is_new = _ensure_fold(store)
+    if is_new:
         print(f"fold built: {len(fold.cells)} cells from "
               f"{len(intents)} intents (genesis = working tree)")
     else:
@@ -115,6 +128,49 @@ def cmd_fold(args):
     print(f"wrote {len(material)} file(s); fold at log_pos={fold.log_pos}")
 
 
+def cmd_rewind(args):
+    """Excise a bad intent's polluted cells; re-fold everything else."""
+    from .rewind import rewind_fold
+    store = Store.open(find_root())
+    entries = store.log()
+    intents = [store.get(e["id"]) for e in entries]
+    matches = [it for it in intents if it.id and it.id.startswith(args.intent)]
+    if not matches:
+        print(f"no intent matching {args.intent!r}")
+        return
+    if len(matches) > 1:
+        print(f"ambiguous prefix {args.intent!r}:")
+        for it in matches:
+            print(f"  {it.id[:12]} — {it.goal}")
+        return
+    bad = matches[0]
+    fold, _ = _ensure_fold(store)
+    new = intents[fold.log_pos:]
+    if new:
+        fold.advance(new)
+    try:
+        report = rewind_fold(fold, intents[:fold.log_pos], bad.id)
+    except (KeyError, ValueError) as e:
+        print(f"rewind: {e}")
+        return
+    material = fold.materialize()
+    for f, src in material.items():
+        with open(f, "w") as fh:
+            fh.write(src)
+    store.save_fold(fold)
+    print(f"rewound {bad.id[:12]} — {bad.goal!r} (log untouched, marked reverted)")
+    print(f"  polluted cone: {len(report.affected)} cell(s)")
+    for r in report.restored:
+        sl = len(r["slice"])
+        print(f"    {r['node_id']}: {r['old_cell_id'][:8]} → "
+              f"{r['new_cell_id'][:8]}  slice={sl} intent(s)")
+    if report.downstream:
+        print("  downstream intents built on polluted state — review advised:")
+        for it in report.downstream:
+            print(f"    ○ {it.id[:12]} — {it.goal}")
+    print(f"  untouched cells: {report.untouched_cells} (byte-identical)")
+
+
 def cmd_why(args):
     """Spacetime-cell lookup: file[:line] -> the cell + its intent slice."""
     import ast as _ast
@@ -133,7 +189,9 @@ def cmd_why(args):
     with open(file) as f:
         source = f.read()
     sources = {file: source}
-    intents = [store.get(e["id"]) for e in store.log()]
+    reverted = store.reverted_ids()
+    intents = [store.get(e["id"]) for e in store.log()
+               if e["id"] not in reverted]
     if line is not None:
         cell = resolve_cell(file, line, sources, intents)
         if cell is None:
@@ -269,6 +327,26 @@ def cmd_demo(args):
     _ast.parse(fold.materialize()["payments.py"])
     print("  materialized fold compiles")
 
+    # ---- Rewind: excise a bad intent ----
+    print("\n--- Rewind: excise a bad intent, keep everything else ---")
+    from .rewind import rewind_fold
+    bad = _mk_intent("normalize log format", "agent-4", "log",
+                     LOG_STRUCTURED,
+                     "pipeline requires uppercase (later found to break parsers)",
+                     verified=True)
+    f2 = Fold.build({"payments.py": DEMO_SOURCE}, [a1, a2])
+    f2.advance([bad])
+    print(f"  +bad intent → log cell: "
+          f"{f2.cells['payments.py:log'].cell_id[:12]}…")
+    rep = rewind_fold(f2, [a1, a2, bad], bad.id)
+    aff = sorted(n.split(":")[1] for n in rep.affected)
+    print(f"  rewind {bad.id[:8]}: polluted cone = {aff}")
+    for r in rep.restored:
+        print(f"    {r['node_id']}: {r['old_cell_id'][:8]} → "
+              f"{r['new_cell_id'][:8]}")
+    print(f"  untouched cells: {rep.untouched_cells} (byte-identical)")
+    print("  log untouched by rewind — bad intent marked reverted, not deleted")
+
     # ---- Scenario 2: same node → negotiation, verified wins ----
     print("\n--- Scenario 2: same node, one verified → negotiation ---")
     a3 = _mk_intent("fix cross-border fee calc", "agent-3", "charge",
@@ -377,6 +455,10 @@ def main(argv=None):
 
     fl = sub.add_parser("fold", help="materialize the intent log to the working tree (per-cell incremental)")
     fl.set_defaults(fn=cmd_fold)
+
+    rw = sub.add_parser("rewind", help="excise a bad intent's polluted cells; re-fold the rest")
+    rw.add_argument("intent", help="intent id (prefix ok)")
+    rw.set_defaults(fn=cmd_rewind)
 
     dm = sub.add_parser("demo", help="run the causal-cone merge demo")
     dm.set_defaults(fn=cmd_demo)

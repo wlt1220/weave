@@ -71,3 +71,8 @@ class Store:
             return None
         with open(self.foldpath) as f:
             return Fold.from_dict(json.load(f))
+
+    def reverted_ids(self) -> set[str]:
+        """Intent ids excised by `weave rewind` (append-only; log untouched)."""
+        fold = self.load_fold()
+        return set(fold.reverted) if fold else set()

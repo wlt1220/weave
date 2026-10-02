@@ -134,7 +134,10 @@ resolves lines to intents. Same ambition, running today.
 ### Local rewind
 `weave rewind <intent>` reverses only the causal cone polluted by a bad intent
 and re-folds the log — the rest of the system keeps running. Global revert is
-a special case (cone = everything), not the default.
+a special case (cone = everything), not the default. The log is append-only:
+rewind marks the intent reverted (the fold skips it) instead of deleting
+history; pollution is the bad nodes plus their transitive dependents, and
+cells outside the cone stay byte-identical.
 
 ### Git bridge (bidirectional)
 Weave doesn't ask the world to abandon git on day one:
@@ -220,8 +223,10 @@ replaying the log to a prefix. `bisect` becomes binary search over verifications
    `(node, intent slice, cell_id)` + the intents that touched it.
 4. `weave fold` — per-cell incremental fold: the log materialized to the
    working tree, recomputing only dirty cells (untouched cells byte-identical).
-5. `weave review` — intent digest with blast radius + risk score.
-6. Coordination plane on Workers + Artifacts (multi-agent concurrency).
+5. `weave rewind <intent>` — excise the polluted cone (bad nodes + transitive
+   dependents), re-fold; log append-only, downstream intents flagged for review.
+6. `weave review` — intent digest with blast radius + risk score.
+7. Coordination plane on Workers + Artifacts (multi-agent concurrency).
 
 ## 7. Roadmap (beyond the competition)
 
