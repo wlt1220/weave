@@ -1,0 +1,184 @@
+# Weave — Version Control for the Agent Century
+
+> Design document. Competition: Cloudflare "Build the next GitHub" (Oct 1–14, 2026).
+> Thesis: Git was built in 2005 for humans mailing patches. The next 30 years belong
+> to agents writing code at machine speed, hundreds of thousands concurrently.
+> Version control must be rebuilt around that reality.
+
+---
+
+## 1. The problem with Git for agents
+
+Git's design bakes in human constraints that agents don't have — and misses
+capabilities agents need:
+
+| Git assumption (human era) | Agent-era reality |
+|---|---|
+| The unit of change is a **text diff** | Agents need the **why**, not the what — goal, plan, alternatives considered |
+| **Branches + PRs** coordinate work | Agents don't wait for review rituals; they need continuous integration of intent |
+| **Merge conflicts** are resolved by humans staring at `<<<<<<<` | Line-based conflicts are an artifact of text thinking; agents can negotiate semantically |
+| `git blame` shows **who** touched a line | Agents need **why**: which task, which conversation, which decision |
+| CI is a **separate system** bolted on | Verification must be **part of the versioned record** |
+| One repo, one working tree per human | Agents need **thousands of ephemeral sandboxes** per minute |
+
+**Core reframing: version control as event sourcing.**
+Git stores snapshots and diffs; the repository state is primary. Weave stores a
+causal **intent log** as the source of truth; the repo state is a materialized
+view — a fold over intents. Time travel, provenance, and replay fall out for free.
+
+---
+
+## 2. Design principles (30-year bets)
+
+1. **Intent is the atomic unit, not the diff.** A diff is a lossy rendering for
+   human eyes. The durable record is: goal → plan → operations → verification →
+   rationale.
+2. **Streams, not branches.** Branches are human coordination rituals (name it,
+   push it, open a PR, wait). Agents publish change intents to streams; the
+   system continuously integrates them. The merge queue becomes the whole system.
+3. **Merge semantically, negotiate the rest.** Textual merges die. Weave merges
+   operation logs at the AST level (CRDT-inspired for commutative edits).
+   Genuine semantic conflicts trigger structured **agent-to-agent negotiation**
+   with full shared context — producing either a merged intent or a decision
+   record. Humans are the escalation path, not the default.
+4. **Verification is versioned.** An intent without a verification receipt
+   (tests run, results, sandbox attestation) cannot integrate. CI isn't a
+   separate service; it's a field on the commit.
+5. **Provenance is queryable.** Every symbol maps to intent → task →
+   conversation. `weave why <symbol>` replays the decision context, not just a hash.
+6. **Humans review risk, not diffs.** `weave review` renders intent digests:
+   what changed, why, blast radius, risk score. Humans supervise at the intent
+   level — the oversight layer for the agent century.
+
+---
+
+## 3. Core concepts
+
+### Intent
+The atomic unit. Content-addressed (sha256 over canonical form):
+
+```
+Intent {
+  id:           hash(canonical(intent))        # content-addressed
+  author:       { agent_id, model, session }    # who/what made this
+  goal:         "fix race in connection pool"   # natural language
+  plan:         [step, ...]                     # what the agent intended
+  operations:   [AST-level edit ops]            # NOT text diffs
+  verification: { tests, results, sandbox }     # receipts, required
+  rationale:    "chose X over Y because..."    # alternatives considered
+  parents:      [intent_ids]                   # causal links
+  stream:       "payments/refactor"
+}
+```
+
+### Stream
+An append-only, ordered log of intents for a task or area. Many streams exist
+concurrently; a continuous integrator folds them into trunk. No long-lived
+branches, no branch namespace contention at 100k-agent scale.
+
+### Weave (the merge)
+Semantic three-way merge over operation logs:
+- Commutative operations (independent AST edits) merge automatically — the
+  CRDT insight applied to code.
+- Overlapping semantic edits → **negotiation session**: the authoring agents
+  are resumed with a shared context snapshot (both intents, both rationales,
+  failing verifications) and must produce a merged intent or a decision record.
+- The negotiation transcript itself is versioned. Conflict resolution becomes
+  training data.
+
+### Provenance graph
+`weave why <file>:<line>` → the intent → the task → the conversation that
+produced it. Onboarding a new agent onto a codebase means replaying decisions,
+not reading diffs.
+
+### Sandbox
+`weave spawn` → an ephemeral, content-addressed execution environment in
+milliseconds. Verification receipts are bound to sandbox attestations, so "it
+worked on my machine" is cryptographically meaningless — the receipt names the
+exact environment.
+
+### Oversight
+`weave review` → natural-language digest per intent: goal, operations summary,
+blast radius (symbols/callers affected), risk score, verification status.
+Humans approve intents, not lines.
+
+---
+
+## 4. Data model
+
+Objects are content-addressed and typed (like git objects, but richer):
+
+```
+blob         # file content (unchanged concept)
+tree         # directory snapshot (unchanged concept)
+intent       # the atomic unit (§3)
+verification # test receipts bound to sandbox attestation
+decision     # negotiation outcome / human override record
+```
+
+The **intent log** is the source of truth. `HEAD` is not a commit — it's a
+pointer to a fold state: `state = fold(intents)`. Checking out an old state is
+replaying the log to a prefix. `bisect` becomes binary search over verifications.
+
+---
+
+## 5. Architecture (Cloudflare-native)
+
+```
+┌─ Agents (100k concurrent) ─────────────────────────┐
+│  weave CLI / SDK  →  intent streams                 │
+└───────────────────────┬────────────────────────────┘
+                        ▼
+┌─ Coordination plane (Workers) ──────────────────────┐
+│  ingest → validate → route to stream                 │
+│  continuous integrator (fold streams → trunk)        │
+│  negotiation orchestrator (Durable Objects)          │
+└───────┬─────────────────────────────┬──────────────┘
+        ▼                             ▼
+┌─ Objects (R2) ────────────┐  ┌─ Artifacts ───────────────┐
+│  content-addressed blobs  │  │  intents, verifications,  │
+│  trees, sandboxes         │  │  decisions, review digests│
+└───────────────────────────┘  └───────────────────────────┘
+```
+
+- **Workers**: intent ingestion, validation, stream routing, the continuous
+  integrator. Scales horizontally with agent count.
+- **Durable Objects**: per-stream serialization and negotiation sessions —
+  strong consistency exactly where merge ordering matters, nowhere else.
+- **R2**: content-addressed object storage for blobs/trees/sandbox images.
+- **Artifacts** (Cloudflare): intents, verification receipts, decision records
+  and review digests as first-class, queryable agent artifacts.
+
+---
+
+## 6. What the prototype demonstrates (by Oct 14)
+
+1. `weave init / commit-intent / log` — intent log as source of truth (local).
+2. Two agents, conflicting intents → semantic merge or **negotiation session**
+   with transcript → merged intent. The money demo.
+3. `weave why` — provenance query replaying decision context.
+4. `weave review` — intent digest with blast radius + risk score.
+5. Coordination plane on Workers + Artifacts (multi-agent concurrency).
+
+## 7. Roadmap (beyond the competition)
+
+- **v0.2**: AST-level operation log (tree-sitter), real semantic merge.
+- **v0.3**: sandbox attestations (Workers-based execution receipts).
+- **v0.4**: negotiation as a protocol (agents from different vendors negotiate).
+- **v1**: hosted streams — "GitHub for intents."
+
+---
+
+## 8. Why this wins
+
+Judging weights: 50% originality/quality of the agent-collaboration prototype,
+25% multi-agent concurrency/coordination/conflict handling, 25% UX.
+
+- **Originality**: nobody else reframes VCS as event sourcing over intents;
+  negotiation-as-versioned-protocol is new.
+- **Concurrency story**: streams + continuous integration + Durable Object
+  serialization directly answers "hundreds of thousands of agents."
+- **UX**: `weave review` / `weave why` give humans the oversight layer the
+  agent century needs — reviewers judge risk, not diffs.
+
+License: MIT.

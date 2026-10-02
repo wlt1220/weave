@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weave"
+version = "0.1.0"
+description = "Version control for the agent century"
+requires-python = ">=3.10"
+
+[project.scripts]
+weave = "weave.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["weave*"]
