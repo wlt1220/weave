@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 
+from .fold import Fold
 from .intent import Intent
 
 
@@ -14,6 +15,7 @@ class Store:
         self.root = root
         self.objdir = os.path.join(root, "objects")
         self.logpath = os.path.join(root, "log")
+        self.foldpath = os.path.join(root, "fold.json")
 
     @classmethod
     def init(cls, root: str) -> "Store":
@@ -59,3 +61,13 @@ class Store:
     def head(self, stream: str = "main") -> str | None:
         entries = self.log(stream)
         return entries[-1]["id"] if entries else None
+
+    def save_fold(self, fold: Fold) -> None:
+        with open(self.foldpath, "w") as f:
+            json.dump(fold.to_dict(), f)
+
+    def load_fold(self) -> Fold | None:
+        if not os.path.exists(self.foldpath):
+            return None
+        with open(self.foldpath) as f:
+            return Fold.from_dict(json.load(f))

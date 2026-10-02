@@ -216,9 +216,12 @@ replaying the log to a prefix. `bisect` becomes binary search over verifications
 1. `weave init / commit-intent / log` — intent log as source of truth (local).
 2. Two agents, conflicting intents → semantic merge or **negotiation session**
    with transcript → merged intent. The money demo.
-3. `weave why` — provenance query replaying decision context.
-4. `weave review` — intent digest with blast radius + risk score.
-5. Coordination plane on Workers + Artifacts (multi-agent concurrency).
+3. `weave why` — spacetime-cell lookup: `file[:line]` → cell coordinates
+   `(node, intent slice, cell_id)` + the intents that touched it.
+4. `weave fold` — per-cell incremental fold: the log materialized to the
+   working tree, recomputing only dirty cells (untouched cells byte-identical).
+5. `weave review` — intent digest with blast radius + risk score.
+6. Coordination plane on Workers + Artifacts (multi-agent concurrency).
 
 ## 7. Roadmap (beyond the competition)
 

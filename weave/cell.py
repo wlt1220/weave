@@ -27,6 +27,15 @@ def node_id(file: str, node: str) -> str:
     return f"{file}:{node}"
 
 
+def canonical_source(source: str) -> str:
+    """Canonical cell state: source text without trailing newlines.
+
+    Both ``weave why`` (AST segment) and ``weave fold`` (op new_source) must
+    hash the same bytes for the same cell, or cell_ids diverge.
+    """
+    return source.rstrip("\n")
+
+
 def compute_cell_id(file: str, node: str, intent_ids: list[str],
                     state_hash: str) -> str:
     """Content-address a cell: same (node, slice, state) -> same id."""
@@ -80,11 +89,30 @@ class Cell:
     state_hash: str                # sha256 of the node's current source
     cell_id: str                   # content address of the cell
     span: tuple[int, int] | None = None
+    source: str = ""               # the node's current source text
     intents: list[Intent] = field(default_factory=list)  # resolved, for display
 
     @property
     def nid(self) -> str:
         return node_id(self.file, self.node)
+
+    def to_dict(self) -> dict:
+        return {
+            "file": self.file, "node": self.node,
+            "intent_ids": self.intent_ids, "state_hash": self.state_hash,
+            "cell_id": self.cell_id,
+            "span": list(self.span) if self.span else None,
+            "source": self.source,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Cell":
+        sp = d.get("span")
+        return cls(
+            file=d["file"], node=d["node"], intent_ids=d["intent_ids"],
+            state_hash=d["state_hash"], cell_id=d["cell_id"],
+            span=(sp[0], sp[1]) if sp else None, source=d.get("source", ""),
+        )
 
 
 def _touches(intent: Intent, file: str, node: str) -> bool:
@@ -107,7 +135,7 @@ def resolve_cell(file: str, target: int | str, sources: dict[str, str],
     if node is None or node_source(source, node) is None:
         return None
     touching = [it for it in intents if _touches(it, file, node)]
-    src = node_source(source, node) or ""
+    src = canonical_source(node_source(source, node) or "")
     state_hash = hashlib.sha256(src.encode("utf-8")).hexdigest()
     intent_ids = [it.id for it in touching if it.id]
     return Cell(
@@ -117,5 +145,6 @@ def resolve_cell(file: str, target: int | str, sources: dict[str, str],
         state_hash=state_hash,
         cell_id=compute_cell_id(file, node, intent_ids, state_hash),
         span=node_span(source, node),
+        source=src,
         intents=touching,
     )

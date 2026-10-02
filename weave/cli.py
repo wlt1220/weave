@@ -73,6 +73,48 @@ def _print_cell(cell):
             print(f"      rationale: {it.rationale or '(none recorded)'}")
 
 
+def cmd_fold(args):
+    """Materialize the intent log to the working tree, per-cell incremental."""
+    from .fold import Fold
+    store = Store.open(find_root())
+    entries = store.log()
+    intents = [store.get(e["id"]) for e in entries]
+    fold = store.load_fold()
+    if fold is None:
+        files = sorted({op.get("file") for it in intents
+                        for op in it.operations if op.get("file")})
+        if not files:
+            print("nothing to fold (no intents with file operations)")
+            return
+        base = {}
+        for f in files:
+            if not os.path.isfile(f):
+                print(f"genesis file missing in working tree: {f}")
+                return
+            with open(f) as fh:
+                base[f] = fh.read()
+        fold = Fold.build(base, intents)
+        print(f"fold built: {len(fold.cells)} cells from "
+              f"{len(intents)} intents (genesis = working tree)")
+    else:
+        new = intents[fold.log_pos:]
+        if not new:
+            print(f"fold up to date: {fold.log_pos} intents, "
+                  f"{len(fold.cells)} cells")
+            return
+        dirty = fold.advance(new)
+        print(f"incremental fold: {len(new)} new intent(s) → "
+              f"{len(dirty)} dirty cell(s)")
+        for d in dirty:
+            print(f"  dirty {d}")
+    material = fold.materialize()
+    for f, src in material.items():
+        with open(f, "w") as fh:
+            fh.write(src)
+    store.save_fold(fold)
+    print(f"wrote {len(material)} file(s); fold at log_pos={fold.log_pos}")
+
+
 def cmd_why(args):
     """Spacetime-cell lookup: file[:line] -> the cell + its intent slice."""
     import ast as _ast
@@ -212,6 +254,21 @@ def cmd_demo(args):
     print(f"  state sha256:{cell.state_hash[:16]}…  "
           f"span lines {cell.span[0]}-{cell.span[1]}")
 
+    # ---- Incremental per-cell fold ----
+    print("\n--- Incremental fold: per-cell cache ---")
+    from .fold import Fold
+    fold = Fold.build({"payments.py": DEMO_SOURCE}, [a1])
+    before = {k: c.cell_id for k, c in fold.cells.items()}
+    dirty = fold.advance([a2])
+    print(f"  built from 1 intent: {len(fold.cells)} cells; "
+          f"+1 intent → dirty cells: {dirty}")
+    untouched = [k for k in fold.cells if k not in dirty]
+    same = all(fold.cells[k].cell_id == before[k] for k in untouched)
+    print(f"  untouched cells byte-identical: {same} "
+          f"({len(untouched)}/{len(fold.cells)})")
+    _ast.parse(fold.materialize()["payments.py"])
+    print("  materialized fold compiles")
+
     # ---- Scenario 2: same node → negotiation, verified wins ----
     print("\n--- Scenario 2: same node, one verified → negotiation ---")
     a3 = _mk_intent("fix cross-border fee calc", "agent-3", "charge",
@@ -317,6 +374,9 @@ def main(argv=None):
     w = sub.add_parser("why", help="spacetime cell lookup: file[:line|node] -> cell + intent slice")
     w.add_argument("path")
     w.set_defaults(fn=cmd_why)
+
+    fl = sub.add_parser("fold", help="materialize the intent log to the working tree (per-cell incremental)")
+    fl.set_defaults(fn=cmd_fold)
 
     dm = sub.add_parser("demo", help="run the causal-cone merge demo")
     dm.set_defaults(fn=cmd_demo)
