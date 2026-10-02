@@ -99,6 +99,38 @@ Semantic three-way merge over operation logs:
   compressed into the **ghost bank** (superseded-by links) — conflict
   resolution becomes training data instead of trash.
 
+### Spacetime cell (时空胞)
+The unifying data-model frame: the repository is a **spacetime manifold**,
+not a file tree with history attached.
+
+- **Space axis**: AST nodes (file → function → block). A position in code.
+- **Time axis**: the intent log. A position in history.
+- **A cell** = `(node, intent_slice)` → the state of that code region during
+  that slice, plus the intents that acted on it.
+  Content-addressed: `cell_id = hash(node_id, intent_range, state_hash)`.
+
+Every Weave feature is a cell operation:
+
+| Feature | Cell reading |
+|---|---|
+| fold / checkout | take the present slice — the "now" of every cell |
+| `weave why <line>` | cell lookup: which cell holds this line, which intents touched it |
+| causal cone | the cells causally downstream of a change; disjoint cell-sets compose lock-free |
+| `weave rewind <intent>` | excise the polluted cells and re-fold; all other cells untouched |
+| negotiation | two agents claim overlapping cells; the transcript decides the surviving lineage |
+| ghost bank | archived cells of losing lineages — superseded, never deleted |
+
+This framing earns its keep (it's not poetry): "the repo is a fold over
+intents" becomes operationally precise. A fold isn't an amorphous replay —
+it's **per-cell**. That gives us incremental fold (re-fold only dirty cells),
+per-cell blame, and a natural addressable unit for Artifacts mirroring
+(`intents/<id>.json` today; cells as objects tomorrow).
+
+Deliberate difference from the ChronoSoma (2046) spec this image comes from:
+there it was cosmology; here every term maps to something implementable now —
+the prototype already computes cones over cells, and `weave why` already
+resolves lines to intents. Same ambition, running today.
+
 ### Local rewind
 `weave rewind <intent>` reverses only the causal cone polluted by a bad intent
 and re-folds the log — the rest of the system keeps running. Global revert is
