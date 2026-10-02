@@ -85,6 +85,11 @@ Semantic three-way merge over operation logs:
   with **disjoint cones merge lock-free, zero coordination** (orthogonal
   non-interference). Cone overlap is the *only* case that needs real work —
   this turns "merge" from a text heuristic into a graph decision procedure.
+  (Implemented refinement: conflict iff one intent's node *is* or *transitively
+  depends on* the other's node. Two intents touching nodes that merely share a
+  dependency — e.g. both call `log()` — do **not** conflict, since neither can
+  change the other's behavior. Stricter and more precise than full-cone
+  intersection.)
 - Commutative operations inside overlapping cones still merge automatically
   (CRDT insight applied to code).
 - Genuine semantic conflicts → **negotiation session**: the authoring agents
