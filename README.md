@@ -29,7 +29,32 @@ weave init
 weave commit-intent --goal "fix race in pool" --author "agent-1"
 weave log
 weave why README.md
+weave demo            # causal-cone merge: 3 scenarios, local engine
 ```
+
+## Coordination plane (Cloudflare Workers)
+
+`workers/` is the multi-agent coordination plane: intent ingestion,
+content-hash sealing, per-stream Durable Object serialization, and the
+continuous integrator (disjoint cones fold lock-free; overlaps open
+negotiations; unverified intents wait for receipts).
+
+```bash
+cd workers && npm install
+npx wrangler dev                                # local: http://localhost:8787
+python3 loadtest.py --agents 20 --intents 5     # concurrency proof
+cd .. && weave demo-remote --stream demo         # 3 scenarios via the Worker
+```
+
+API: `POST /v1/streams`, `POST /v1/streams/:s/intents`,
+`GET /v1/streams/:s`, `POST /v1/streams/:s/intents/:id/verify`,
+`POST /v1/streams/:s/retry`, `GET /v1/streams/:s/git` (git bridge).
+
+Each stream is backed by a Cloudflare Artifacts repo
+(`weave-stream-<name>`); intents are mirrored as `intents/<id>.json`
+via git-over-HTTPS with minted repo tokens. Set `USE_ARTIFACTS=1`
+with a Cloudflare account for production; local dev degrades to the
+Durable Object store.
 
 ## License
 

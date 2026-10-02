@@ -191,6 +191,55 @@ def cmd_demo(args):
     print("=" * 64)
 
 
+def cmd_demo_remote(args):
+    """Same three scenarios as `weave demo`, but through the Workers plane."""
+    from .remote import WeaveRemote
+    r = WeaveRemote(args.base)
+    stream = args.stream
+    meta = r.ensure_stream(stream)
+    print(f"stream '{stream}' → repo {meta['repo']} "
+          f"(artifacts={'on' if meta.get('artifacts') else 'off, local DO store'})")
+
+    a1 = _mk_intent("add idempotency key to charge", "agent-1", "charge",
+                    CHARGE_IDEMPOTENT,
+                    "200k req/day hit double-charge on retries; key makes it safe",
+                    verified=True)
+    a2 = _mk_intent("add audit trail to refund", "agent-2", "refund",
+                    REFUND_AUDIT, "finance requires an audit trail on every refund",
+                    verified=True)
+    a3 = _mk_intent("fix cross-border fee calc", "agent-3", "charge",
+                    CHARGE_FEE, "fee was flat 2%; cross-border needs 2.9% + 30c",
+                    verified=False)
+    src = {"payments.py": DEMO_SOURCE}
+
+    print("\n--- agent-1 → charge (verified) ---")
+    res1 = r.submit(stream, a1, src)
+    print(f"  integrated={res1.get('integrated')} id={res1['id'][:12]}")
+
+    print("--- agent-2 → refund (verified, disjoint) ---")
+    a2.parents = [res1["id"]]
+    res2 = r.submit(stream, a2, src)
+    print(f"  integrated={res2.get('integrated')} id={res2['id'][:12]}")
+
+    print("--- agent-3 → charge (UNVERIFIED, same node) ---")
+    res3 = r.submit(stream, a3, src)
+    print(f"  integrated={res3.get('integrated')} "
+          f"awaiting_verification={res3.get('awaiting_verification')}")
+
+    print("--- agent-3's CI finishes → receipt arrives ---")
+    v = r.verify(stream, res3["id"], passed=True)
+    print(f"  verified, integrated={v.get('integrated')} "
+          f"negotiation={v.get('negotiation')} reason={v.get('reason')}")
+
+    st = r.state(stream)
+    print(f"\nstream state: trunk_folds={st['trunk']['folds']} "
+          f"pending={len(st['pending'])} "
+          f"negotiations={len(st['negotiations'])} log={len(st['log'])}")
+    for n in st["negotiations"]:
+        print(f"  [{n['id']}] {n['outcome']} winner="
+              f"{n['winner'][:12] if n['winner'] else None} :: {n['reason']}")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="weave", description="version control for the agent century")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -218,6 +267,12 @@ def main(argv=None):
 
     dm = sub.add_parser("demo", help="run the causal-cone merge demo")
     dm.set_defaults(fn=cmd_demo)
+
+    dr = sub.add_parser("demo-remote",
+                        help="run the merge demo against a Workers coordinator")
+    dr.add_argument("--base", default="http://localhost:8787")
+    dr.add_argument("--stream", default="demo")
+    dr.set_defaults(fn=cmd_demo_remote)
 
     p.set_defaults(fn=lambda a: p.print_help())
     args = p.parse_args(argv)
