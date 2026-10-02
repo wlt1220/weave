@@ -66,6 +66,8 @@ Intent {
   operations:   [AST-level edit ops]            # NOT text diffs
   verification: { tests, results, sandbox }     # receipts, required
   rationale:    "chose X over Y because..."    # alternatives considered
+  rejected:     [{ alternative, flaw }]         # explored but discarded (ghost genes)
+  certificate:  "formal-proof-hash"             # oracle signature, when available
   parents:      [intent_ids]                   # causal links
   stream:       "payments/refactor"
 }
@@ -78,13 +80,34 @@ branches, no branch namespace contention at 100k-agent scale.
 
 ### Weave (the merge)
 Semantic three-way merge over operation logs:
-- Commutative operations (independent AST edits) merge automatically — the
-  CRDT insight applied to code.
-- Overlapping semantic edits → **negotiation session**: the authoring agents
+- **Causal cones first.** For any change touching node `v`, compute its causal
+  cone `C(v)` = transitive dependents + dependencies. Two concurrent intents
+  with **disjoint cones merge lock-free, zero coordination** (orthogonal
+  non-interference). Cone overlap is the *only* case that needs real work —
+  this turns "merge" from a text heuristic into a graph decision procedure.
+- Commutative operations inside overlapping cones still merge automatically
+  (CRDT insight applied to code).
+- Genuine semantic conflicts → **negotiation session**: the authoring agents
   are resumed with a shared context snapshot (both intents, both rationales,
   failing verifications) and must produce a merged intent or a decision record.
-- The negotiation transcript itself is versioned. Conflict resolution becomes
-  training data.
+- The negotiation transcript itself is versioned. Losing candidates are
+  compressed into the **ghost bank** (superseded-by links) — conflict
+  resolution becomes training data instead of trash.
+
+### Local rewind
+`weave rewind <intent>` reverses only the causal cone polluted by a bad intent
+and re-folds the log — the rest of the system keeps running. Global revert is
+a special case (cone = everything), not the default.
+
+### Git bridge (bidirectional)
+Weave doesn't ask the world to abandon git on day one:
+- **Export**: compile the intent fold to a standard git tree + history for
+  legacy tools, CI, and humans (`weave export`).
+- **Ingest**: a git push is parsed into the intent log (operations + author,
+  verification pending) — old-world tools keep working while agents live in
+  the fast lane.
+- **AGENTS.md manifest**: the active invariant set is rendered as a
+  machine-readable constitution every agent entering the repo must follow.
 
 ### Provenance graph
 `weave why <file>:<line>` → the intent → the task → the conversation that
@@ -176,9 +199,20 @@ Judging weights: 50% originality/quality of the agent-collaboration prototype,
 
 - **Originality**: nobody else reframes VCS as event sourcing over intents;
   negotiation-as-versioned-protocol is new.
-- **Concurrency story**: streams + continuous integration + Durable Object
-  serialization directly answers "hundreds of thousands of agents."
+- **Concurrency story**: causal cones + streams + continuous integration +
+  Durable Object serialization directly answers "hundreds of thousands of
+  agents" — with a decision procedure, not hand-waving.
 - **UX**: `weave review` / `weave why` give humans the oversight layer the
-  agent century needs — reviewers judge risk, not diffs.
+  agent century needs — reviewers judge risk, not diffs. The git bridge means
+  judges (who live in git) can touch it on day one.
+
+## 9. Influences & credit
+
+The causal-cone merge criterion, local rewind, ghost bank, git projection
+bridge, and proof-carrying provenance fields were inspired by the ChronoSoma
+(2046 Next-Gen Agentic VCS) system design specification, shared with us via
+Google Doc. Weave differs deliberately: same ambition, but every concept above
+is scoped to something implementable *now* — the prototype in this repo
+already runs.
 
 License: MIT.
