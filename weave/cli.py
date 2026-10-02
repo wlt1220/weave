@@ -54,22 +54,64 @@ def cmd_log(args):
         print(f"{flag} {e['id'][:12]} [{e['stream']}] {e['goal']}")
 
 
+def _print_cell(cell):
+    flag = lambda it: "✓" if it.verified else "○"
+    print(f"cell {cell.nid}")
+    print(f"  cell_id  {cell.cell_id[:16]}…")
+    if cell.span:
+        print(f"  span     lines {cell.span[0]}-{cell.span[1]}")
+    print(f"  state    sha256:{cell.state_hash[:16]}…")
+    n = len(cell.intent_ids)
+    rng = (f"{cell.intent_ids[0][:8]} → {cell.intent_ids[-1][:8]}"
+           if n else "(untouched since init)")
+    print(f"  slice    {n} intent{'s' if n != 1 else ''} {rng}")
+    if cell.intents:
+        print("  touched by:")
+        for it in cell.intents:
+            print(f"    {flag(it)} {it.id[:12]} — {it.goal}")
+            print(f"      author: {it.author.agent_id} ({it.author.model})")
+            print(f"      rationale: {it.rationale or '(none recorded)'}")
+
+
 def cmd_why(args):
-    # prototype: show intents touching a path (operations carry file paths)
+    """Spacetime-cell lookup: file[:line] -> the cell + its intent slice."""
+    import ast as _ast
+    from .cell import resolve_cell
     store = Store.open(find_root())
-    hits = []
-    for e in store.log():
-        it = store.get(e["id"])
-        if any(args.path in str(op) for op in it.operations):
-            hits.append(it)
-    if not hits:
-        print(f"no intents found touching {args.path}")
+    target = args.path
+    file, line = target, None
+    if ":" in target:
+        maybe_file, _, spec = target.rpartition(":")
+        if os.path.isfile(maybe_file):
+            file = maybe_file
+            line = int(spec) if spec.isdigit() else spec  # line number or node name
+    if not os.path.isfile(file):
+        print(f"no such file in working tree: {file}")
         return
-    for it in hits:
-        print(f"intent {it.id[:12]} — {it.goal}")
-        print(f"  author: {it.author.agent_id} ({it.author.model})")
-        print(f"  rationale: {it.rationale or '(none recorded)'}")
-        print(f"  verified: {it.verified}")
+    with open(file) as f:
+        source = f.read()
+    sources = {file: source}
+    intents = [store.get(e["id"]) for e in store.log()]
+    if line is not None:
+        cell = resolve_cell(file, line, sources, intents)
+        if cell is None:
+            print(f"no cell at {target} (line outside any function?)")
+            return
+        _print_cell(cell)
+        return
+    # census: one cell per top-level function
+    tree = _ast.parse(source)
+    nodes = [n.name for n in tree.body
+             if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))]
+    if not nodes:
+        print(f"no functions in {file}")
+        return
+    for name in nodes:
+        cell = resolve_cell(file, name, sources, intents)
+        sl = f"{len(cell.intent_ids)} intents" if cell.intent_ids else "untouched"
+        sp = f"{cell.span[0]}-{cell.span[1]}" if cell.span else "?"
+        print(f"cell {cell.nid}  {cell.cell_id[:12]}…  "
+              f"slice={sl}  lines={sp}")
 
 
 DEMO_SOURCE = '''\
@@ -158,6 +200,17 @@ def cmd_demo(args):
     import ast as _ast
     _ast.parse(merged_src)  # must still compile
     print("✓ merged file compiles; trunk holds both intents")
+
+    # ---- Spacetime cell: weave why charge() ----
+    print("\n--- Spacetime cell: weave why charge() ---")
+    from .cell import resolve_cell
+    cell = resolve_cell("payments.py", 6, {"payments.py": merged_src},
+                        [a1, a2])
+    print(f"  cell {cell.nid}  id={cell.cell_id[:16]}…")
+    print(f"  slice: {[i[:8] for i in cell.intent_ids]} "
+          f"({len(cell.intent_ids)} intents touched this node)")
+    print(f"  state sha256:{cell.state_hash[:16]}…  "
+          f"span lines {cell.span[0]}-{cell.span[1]}")
 
     # ---- Scenario 2: same node → negotiation, verified wins ----
     print("\n--- Scenario 2: same node, one verified → negotiation ---")
@@ -261,7 +314,7 @@ def main(argv=None):
     l.add_argument("--stream", default=None)
     l.set_defaults(fn=cmd_log)
 
-    w = sub.add_parser("why", help="provenance: why does this path look like this?")
+    w = sub.add_parser("why", help="spacetime cell lookup: file[:line|node] -> cell + intent slice")
     w.add_argument("path")
     w.set_defaults(fn=cmd_why)
 
