@@ -42,6 +42,7 @@ negotiations; unverified intents wait for receipts).
 ```bash
 cd workers && npm install
 npx wrangler dev                                # local: http://localhost:8787
+npm test                                        # 25 vitest: cone/seal/artifacts/coordinator
 python3 loadtest.py --agents 20 --intents 5     # concurrency proof
 cd .. && weave demo-remote --stream demo         # 3 scenarios via the Worker
 ```
