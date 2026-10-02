@@ -52,10 +52,13 @@ API: `POST /v1/streams`, `POST /v1/streams/:s/intents`,
 `POST /v1/streams/:s/retry`, `GET /v1/streams/:s/git` (git bridge).
 
 Each stream is backed by a Cloudflare Artifacts repo
-(`weave-stream-<name>`); intents are mirrored as `intents/<id>.json`
-via git-over-HTTPS with minted repo tokens. Set `USE_ARTIFACTS=1`
-with a Cloudflare account for production; local dev degrades to the
-Durable Object store.
+(`weave-stream-<name>`), managed entirely through the binding
+(create/get/token — no filesystem in the Worker, production-safe by
+construction). Intents are mirrored as `intents/<id>.json` by any git
+client holding a minted token: `weave mirror --stream <name>` does it
+with real git (`GET /v1/streams/:s/git` → clone → write → commit →
+push). Set `USE_ARTIFACTS=1` with a Cloudflare account for production;
+local dev degrades to the Durable Object store.
 
 ## License
 

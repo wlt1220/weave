@@ -171,6 +171,27 @@ def cmd_rewind(args):
     print(f"  untouched cells: {report.untouched_cells} (byte-identical)")
 
 
+def cmd_mirror(args):
+    """Mirror the stream's intents as intents/<id>.json via the git bridge."""
+    import urllib.error
+    from .mirror import mirror_intents
+    from .remote import WeaveRemote
+    r = WeaveRemote(args.base)
+    try:
+        access = r.git_access(args.stream)
+    except urllib.error.HTTPError as e:
+        if e.code == 503:
+            print("artifacts not enabled on this coordinator "
+                  "(set USE_ARTIFACTS=1 with a Cloudflare account)")
+            return
+        raise
+    state = r.state(args.stream)
+    intents = [r.get_intent(args.stream, e["id"]) for e in state["log"]]
+    summary = mirror_intents(access["remote"], access["token"], intents)
+    print(f"mirrored {summary['wrote']} new intent file(s) → {access['remote']}")
+    print(f"committed={summary['committed']} pushed={summary['pushed']}")
+
+
 def cmd_why(args):
     """Spacetime-cell lookup: file[:line] -> the cell + its intent slice."""
     import ast as _ast
@@ -459,6 +480,11 @@ def main(argv=None):
     rw = sub.add_parser("rewind", help="excise a bad intent's polluted cells; re-fold the rest")
     rw.add_argument("intent", help="intent id (prefix ok)")
     rw.set_defaults(fn=cmd_rewind)
+
+    mr = sub.add_parser("mirror", help="mirror intents as intents/<id>.json via the git bridge")
+    mr.add_argument("--stream", default="demo")
+    mr.add_argument("--base", default="http://localhost:8787")
+    mr.set_defaults(fn=cmd_mirror)
 
     dm = sub.add_parser("demo", help="run the causal-cone merge demo")
     dm.set_defaults(fn=cmd_demo)

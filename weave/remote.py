@@ -59,6 +59,13 @@ class WeaveRemote:
     def state(self, stream: str) -> dict:
         return self._get(f"/v1/streams/{stream}")
 
+    def get_intent(self, stream: str, intent_id: str) -> dict:
+        return self._get(f"/v1/streams/{stream}/intents/{intent_id}")
+
+    def git_access(self, stream: str) -> dict:
+        """Minted git remote + short-lived token (the git bridge)."""
+        return self._get(f"/v1/streams/{stream}/git")
+
     def verify(self, stream: str, intent_id: str, passed: bool = True) -> dict:
         return self._post(f"/v1/streams/{stream}/intents/{intent_id}/verify",
                           {"tests": ["t"], "passed": passed, "sandbox": "sbx"})

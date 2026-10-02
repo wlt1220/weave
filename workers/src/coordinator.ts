@@ -61,8 +61,9 @@ export class StreamCoordinator extends DurableObject<Env> {
     log.push({ id, stream, goal: intent.goal, ts: Date.now() });
     await this.ctx.storage.put("log", log);
 
-    // best-effort: mirror to the stream's Artifacts repo (git-visible record)
-    this.artifacts().persistIntent(stream, intent).catch(() => {});
+    // The git-visible record lives in the stream's Artifacts repo, mirrored
+    // by any git client via GET /v1/streams/:stream/git (`weave mirror`).
+    // The Worker never touches git itself: binding RPCs only.
 
     // continuous integrator
     const result = await this.integrate(intent);
